@@ -1,4 +1,3 @@
-require 'metacli'
 require 'utils'
 require 'uri'
 
@@ -11,12 +10,13 @@ class Cmds
     checker = Checker.new conf[:mounts].map { Pathname _1 }, docker
 
     docker.get_json("/containers/json").each do |ctn|
+      next unless ctn.fetch("Labels")["com.docker.compose.oneoff"] == "False"
       clog = log[Cmds.ctn_name ctn]
+      clog.debug "checking"
       if (mnt, _ = checker.failed_mount? ctn, log: clog)
         clog[failed_mnt: mnt.basename].warn "restarting" do
           docker.container_restart ctn.fetch("Id")
         end
-        break
       end
     end
   end
@@ -36,8 +36,16 @@ class Cmds
 
     def failed_mount?(ctn, log:)
       each_mounted_dir ctn do |mnt, dir|
-        log[mnt: mnt.basename, dir: dir].debug "checking"
-        if dir_failed_mount? ctn, dir
+        dlog = log[mnt: mnt.basename, dir: dir]
+        ko = dlog.info "checking" do
+          Timeout.timeout 10 do
+            dir_failed_mount? ctn, dir
+          end
+        rescue Timeout::Error
+          dlog.warn "timeout while checking"
+          false
+        end
+        if ko
           return [mnt, dir]
         end
       end
@@ -59,7 +67,7 @@ class Cmds
           m.fetch("Type") == "bind" or next
           source = Pathname m.fetch("Source")
           if source.relative_path_from(dir).descend.first.to_s != ".."
-            yield [dir, Pathname(m.fetch("Destination"))]
+            yield dir, Pathname(m.fetch("Destination"))
             break
           end
         end
@@ -69,5 +77,6 @@ class Cmds
 end
 
 if $0 == __FILE__
+  require 'metacli'
   MetaCLI.new(ARGV).run Cmds.new
 end
