@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-exec ssh -vNL _tmp/docker.sock:/var/run/docker.sock hetax.srv
+sock=_tmp/docker.sock
+
+rm -f "$sock"
+exec ssh -vNL "$sock":/var/run/docker.sock hetax.srv

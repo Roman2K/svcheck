@@ -56,7 +56,13 @@ class Cmds
       @docker.container_exec(ctn.fetch("Id"), "ls", dir) { |_, out, err, thr|
         out = out.read
         err = err.read
-        thr.value.success? or raise "failed to exec ls: #{err}"
+        if !thr.value.success?
+          case err
+          when /Transport endpoint is not connected/, /Socket not connected/
+            return true
+          end
+          raise "failed to exec ls: #{err}"
+        end
         out
       }.split("\n").empty?
     end
